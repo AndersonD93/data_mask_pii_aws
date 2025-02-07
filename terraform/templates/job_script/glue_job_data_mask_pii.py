@@ -31,7 +31,7 @@ table_name = args["table_name"]  # dinámico, desde Lambda
 database_catalog_name = args["database_catalog_name"]
 redshiftTmpDir = args["redshiftTmpDir"]
 role_arn = args["role_arn"]
-db_user = args["db_user"]
+db_user = "admin_ajduran"
 cluster_id = args["cluster_id"]
 authorized_users_table = args["authorized_users_table"]
 lambda_function_name = args["lambda_function_name"]
@@ -42,7 +42,6 @@ pii_patterns = {
     "cedula_ciudadania_con_prefijo": r"CC\d{8,10}",
     "direccion": r"\b(?:CL|CR|AV|TR|KM|CJRES|MZ|CS|PS)\s?\d+\s?(?:[A-Z]|\#)?\s?-?\s?\d*(?:\s?#\s?\d+)?(?:\s?AP\s?\d+)?(?:\s?BL\s?\d+)?(?:\s?OF\s?\d+)?\b",
 }
-
 
 def invoke_create_masked_view():
     try:
@@ -76,15 +75,10 @@ def create_masked_view(
     # Elimina duplicados de PII encontrados
     pii_columns_unique = list(set(pii_columns))
     print(f"Columnas PII encontradas: {pii_columns_unique}")
-    # Obtener el esquema completo de la tabla
-    schema = get_table_schema(database_catalog_name, table_name)
-    print(f"schema: {schema}")
-    all_columns = [column[0] for column in schema]  # Todas las columnas de la tabla
-    print(f"all_columns:{all_columns}")
-    parts = table_name.split("_", 5)
-    table_name_redshift = parts[5]
-    schema_name = parts[4]
-    db_name = "_".join(parts[:4])
+    parts = table_name.split("_", 4)
+    table_name_redshift = parts[4]
+    schema_name = parts[3]
+    db_name = "_".join(parts[:3])
     # Verificar si la vista existe
     view_name = f"vw_masked_{table_name_redshift}"
     check_view_sql = f"""
@@ -143,48 +137,79 @@ def create_masked_view(
 
 
 def execute_redshift_query(sql, db_name, role_arn, db_user, cluster_id):
-    redshift_client = boto3.client("redshift-data", region_name="us-east-2")
-    response = redshift_client.execute_statement(
-        ClusterIdentifier=cluster_id, Database=db_name, DbUser=db_user, Sql=sql
-    )
-    statement_id = response["Id"]
+    print("Ingresando a execute_redshift_query")
+    print(f"sql=>{sql} db_name=>{db_name} db_user=>{db_user} cluster_id=>{cluster_id}")
+    redshift_client = boto3.client('redshift-data')
+
+    try:
+        # Intentamos ejecutar la consulta
+        response = redshift_client.execute_statement(
+            ClusterIdentifier=cluster_id,
+            Database=db_name,
+            DbUser=db_user,
+            Sql=sql
+        )
+        if 'CreatedAt' in response:
+            response['CreatedAt'] = response['CreatedAt'].isoformat()
+            
+        statement_id = response.get("Id", None)
+
+        if not statement_id:
+            print("Error: No se recibió un statement_id. Respuesta de execute_statement:")
+            print(response)
+            return {"statusCode": 500, "body": "Error ejecutando query"}
+
+        print(f"Query enviada con statement_id: {statement_id}")
+
+    except Exception as e:
+        print(f"Error ejecutando la consulta en Redshift: {str(e)}")
+        return {"statusCode": 500, "body": f"Error ejecutando query: {str(e)}"}
+
     status = None
     attempts = 0
     backoff_time = 10
     max_attempts = 7
+
     while status not in ("FINISHED", "FAILED", "ABORTED") and attempts < max_attempts:
         try:
             response = redshift_client.describe_statement(Id=statement_id)
             status = response["Status"]
+            print(f"Intento {attempts + 1}: Estado de la consulta: {status}")
+
             if status in ("FAILED", "ABORTED"):
-                raise Exception(f"Query failed with status: {status}")
+                print(f"Error: La consulta falló con estado: {status}")
+                print(f"Detalles del error: {response}")
+                return {"statusCode": 500, "body": f"Query failed: {response}"}
+
             if status == "FINISHED":
                 result = redshift_client.get_statement_result(Id=statement_id)
-                records = result["Records"]  # Asegúrate de que esto sea una lista
-                # Muestra los registros para verificar
-                print(f"Records: {records}")
-                # Aquí puedes realizar la evaluación de PII
+                records = result.get("Records", [])
+                print(f"Consulta finalizada. Registros obtenidos: {records}")
+
                 return {
                     "statusCode": 200,
-                    "body": json.dumps(
-                        records
-                    ),  # O cualquier otra estructura que necesites
+                    "body": json.dumps(records),
                 }
+
         except redshift_client.exceptions.ResourceNotFoundException:
-            print(
-                f"Query with statement_id {statement_id} not found. Retrying in {backoff_time} seconds..."
-            )
+            print(f"Query con statement_id {statement_id} no encontrada. Reintentando en {backoff_time} segundos...")
+
+        except Exception as e:
+            print(f"Error al obtener estado de la consulta: {str(e)}")
+            return {"statusCode": 500, "body": f"Error en describe_statement: {str(e)}"}
+
         time.sleep(backoff_time)
         backoff_time = min(backoff_time + 10, 60)
         attempts += 1
 
-    if status not in ("FINISHED"):
-        raise Exception(f"Query did not finish after {max_attempts} attempts.")
+    print(f"Error: La consulta no finalizó después de {max_attempts} intentos.")
+    return {"statusCode": 500, "body": "Query timeout"}
 
 
 # Función para obtener el esquema de la tabla desde Glue Data Catalog
 def get_table_schema(database, table):
     glue_client = boto3.client("glue")
+    print(f"database= {database} tablename={table}")
     response = glue_client.get_table(DatabaseName=database, Name=table)
     columns = response["Table"]["StorageDescriptor"]["Columns"]
     schema = [(column["Name"], column["Type"]) for column in columns]
@@ -271,3 +296,8 @@ def invoke_lambda_notification(lambda_function_name, schema_name, view_name):
         print("Lambda function invoked successfully:", response)
     except ValueError as e:
         print("Error invoking Lambda function:", str(e))
+
+               
+if __name__ == "__main__":
+    print("Ejecutando Glue Job")
+    invoke_create_masked_view()

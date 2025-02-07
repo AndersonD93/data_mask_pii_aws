@@ -12,7 +12,7 @@ resource "aws_lambda_function" "lambda_function" {
   handler       = each.value.handler
   runtime       = each.value.runtime
   filename      = data.archive_file.lambda_package[each.key].output_path
-
+  timeout       = 10
   environment {
     variables = each.value.environment_variables
   }

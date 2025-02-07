@@ -36,7 +36,7 @@ resource "aws_glue_crawler" "crawler_redshift" {
 
 resource "aws_glue_job" "glue_job_mask_data_pii" {
   name              = "glue-job-mask-data-pii"
-  role_arn          = aws_iam_role.pii_mask_role.arn
+  role_arn          = aws_iam_role.iam_role.arn
   max_retries       = 0
   number_of_workers = 2
   timeout           = 60
@@ -50,19 +50,25 @@ resource "aws_glue_job" "glue_job_mask_data_pii" {
   }
 
   default_arguments = {
-    "--enable-continuous-cloudwatch-log" = "false"
     "--enable-continuous-log-filter"     = "false"
     "--job-bookmark-option"              = "job-bookmark-disable"
     "--job-language"                     = "python"
     "--debugging"                        = "false"
     "--extra-py-files"                   = "s3://${aws_s3_bucket.s3_bucket_glue_scripts.bucket}/job_script/glue_job_data_mask_pii.py"
     "--enable-auto-scaling"              = "true"
-    "--TempDir"                          = "s3://${aws_s3_bucket.s3_bucket_glue_scripts.bucket}/tmp/Temporary/"
+    "--redshiftTmpDir"                   = "s3://test-s3-scripts-glue/tmp/Temporary/"
     "--enable-glue-datacatalog"          = "true"
     "--enable-metrics"                   = "true"
     "--enable-continuous-cloudwatch-log" = "true"
     "--enable-spark-ui"                  = "true"
-    "--spark-event-logs-path"            = "s3://${aws_s3_bucket.s3_bucket_glue_scripts.bucket}/tmp/Spark_UI_logs/"
+    "--spark-event-logs-path"            = "s3://test-s3-scripts-glue/tmp/Spark_UI_logs/"
+    "--role_arn"                         =  aws_iam_role.iam_role.arn
+    "--db_user"                          =  jsondecode(data.aws_secretsmanager_secret_version.existing_secret_version.secret_string)["master_username"]
+    "--cluster_id"                       =  aws_redshift_cluster.cluster_test_data_api.id
+    "--authorized_users_table"           =  "authorized_users"
+    "--lambda_function_name"             =  aws_lambda_function.lambda_function["notification_pii_mask"].function_name
+    "--conf"                             = "spark.hadoop.fs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem"
+    "--TempDir"                          = "s3://test-s3-scripts-glue/tmp/Temporary/" 
   }
 }
 
