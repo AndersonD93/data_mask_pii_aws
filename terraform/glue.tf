@@ -75,3 +75,7 @@ resource "aws_glue_job" "glue_job_mask_data_pii" {
 output "job_name" {
   value = aws_glue_job.glue_job_mask_data_pii.name
 }
+
+output "job_arn" {
+  value = aws_glue_job.glue_job_mask_data_pii.arn
+}

@@ -13,6 +13,9 @@ resource "aws_iam_role_policy" "glue_crawler_policy" {
         Effect = "Allow"
         Action = [
           "glue:*",
+          "ec2:*",
+          "lambda:*",
+          "cloudwatch:*",
           "logs:CreateLogGroup",
           "logs:CreateLogStream",
           "logs:PutLogEvents"

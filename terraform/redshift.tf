@@ -12,6 +12,11 @@ output "secret_arn" {
   value = data.aws_secretsmanager_secret.secret_public_api.arn
 }
 
+resource "aws_redshift_subnet_group" "redshift_subnet_group" {
+  name       = "redshift-subnet-group"
+  subnet_ids = [var.subnet_id]
+}
+
 resource "aws_redshift_cluster" "cluster_test_data_api" {
   cluster_identifier       = "cluster-test-data-api"
   database_name            = "db_data_api"
@@ -21,6 +26,8 @@ resource "aws_redshift_cluster" "cluster_test_data_api" {
   cluster_type             = "single-node"
   publicly_accessible      = true
   skip_final_snapshot      = true
+  cluster_subnet_group_name = aws_redshift_subnet_group.redshift_subnet_group.name
+  vpc_security_group_ids   = [aws_security_group.security_group_glue.id]
 }
 
 output "redshift_endpoint" {

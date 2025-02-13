@@ -28,3 +28,15 @@ VALUES
 (11,'CC8765432109', 'Pedro Castillo', 'pedro.castillo@example.com', '+57 3169012345', 'Carrera 15 #45-80, Armenia', '1986-09-21', '4111111111111111', 'Cliente con historial limpio.'),
 (12,'CC2109876543', 'Sofía Ortiz', 'sofia.ortiz@example.com', '+57 3170123456', 'Avenida 68 #100-30, Cali', '1993-02-14', '5500000000000004', 'Usuario inactivo.'),
 (13,'CC6789012340', 'Camila Cárdenas', 'camila.cardenas@example.com', '+57 3181234567', 'Calle 5 #90-45, Bogotá', '1998-07-01', '340000000000009', 'Registro actualizado recientemente.');
+
+
+CREATE TABLE public.authorized_users (
+    usersyid INT NOT NULL,
+    usename VARCHAR(50) NOT NULL,
+    pii_access BOOLEAN NOT NULL
+);
+
+
+INSERT INTO public.authorized_users (usersyid, usename, pii_access)
+VALUES 
+    (150, 'test_user_masked_sensitive_data', FALSE);

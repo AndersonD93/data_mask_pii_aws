@@ -140,71 +140,38 @@ def create_masked_view(
 def execute_redshift_query(sql, db_name, role_arn, db_user, cluster_id):
     print("Ingresando a execute_redshift_query")
     print(f"sql=>{sql} db_name=>{db_name} db_user=>{db_user} cluster_id=>{cluster_id}")
-    redshift_client = boto3.client('redshift-data')
+
+    lambda_client = boto3.client('lambda')
+
+    payload = {
+        "sql": sql,
+        "db_name": db_name,
+        "db_user": db_user,
+        "cluster_id": cluster_id
+    }
 
     try:
-        # Intentamos ejecutar la consulta
-        response = redshift_client.execute_statement(
-            ClusterIdentifier=cluster_id,
-            Database=db_name,
-            DbUser=db_user,
-            Sql=sql
+        # Invocar la función Lambda de forma síncrona
+        response = lambda_client.invoke(
+            FunctionName=lambda_function_name_execute,
+            InvocationType='RequestResponse',  # Esperamos la respuesta
+            Payload=json.dumps(payload)
         )
-        if 'CreatedAt' in response:
-            response['CreatedAt'] = response['CreatedAt'].isoformat()
-            
-        statement_id = response.get("Id", None)
 
-        if not statement_id:
-            print("Error: No se recibió un statement_id. Respuesta de execute_statement:")
-            print(response)
-            return {"statusCode": 500, "body": "Error ejecutando query"}
+        response_payload = json.loads(response['Payload'].read().decode('utf-8'))
 
-        print(f"Query enviada con statement_id: {statement_id}")
+        # Verificar si la ejecución fue exitosa
+        if response_payload.get("statusCode") == 200:
+            print(f"Consulta ejecutada correctamente: {response_payload}")
+            return response_payload
+        else:
+            print(f"Error en la ejecución de la consulta: {response_payload}")
+            return response_payload
 
     except Exception as e:
-        print(f"Error ejecutando la consulta en Redshift: {str(e)}")
-        return {"statusCode": 500, "body": f"Error ejecutando query: {str(e)}"}
+        print(f"Error invocando la Lambda: {str(e)}")
+        return {"statusCode": 500, "body": f"Error invocando Lambda: {str(e)}"}
 
-    status = None
-    attempts = 0
-    backoff_time = 10
-    max_attempts = 7
-
-    while status not in ("FINISHED", "FAILED", "ABORTED") and attempts < max_attempts:
-        try:
-            response = redshift_client.describe_statement(Id=statement_id)
-            status = response["Status"]
-            print(f"Intento {attempts + 1}: Estado de la consulta: {status}")
-
-            if status in ("FAILED", "ABORTED"):
-                print(f"Error: La consulta falló con estado: {status}")
-                print(f"Detalles del error: {response}")
-                return {"statusCode": 500, "body": f"Query failed: {response}"}
-
-            if status == "FINISHED":
-                result = redshift_client.get_statement_result(Id=statement_id)
-                records = result.get("Records", [])
-                print(f"Consulta finalizada. Registros obtenidos: {records}")
-
-                return {
-                    "statusCode": 200,
-                    "body": json.dumps(records),
-                }
-
-        except redshift_client.exceptions.ResourceNotFoundException:
-            print(f"Query con statement_id {statement_id} no encontrada. Reintentando en {backoff_time} segundos...")
-
-        except Exception as e:
-            print(f"Error al obtener estado de la consulta: {str(e)}")
-            return {"statusCode": 500, "body": f"Error en describe_statement: {str(e)}"}
-
-        time.sleep(backoff_time)
-        backoff_time = min(backoff_time + 10, 60)
-        attempts += 1
-
-    print(f"Error: La consulta no finalizó después de {max_attempts} intentos.")
-    return {"statusCode": 500, "body": "Query timeout"}
 
 # Función para obtener el esquema de la tabla desde Glue Data Catalog
 def get_table_schema(database, table):
