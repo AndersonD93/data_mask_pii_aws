@@ -1,7 +1,7 @@
 
 # Aplicación Serverless con AWS y Terraform
 
-¡Bienvenido a este proyecto serverless! Este repositorio contiene una aplicación de apuestas deportivas nativa de la nube construida utilizando servicios de AWS e Infraestructura como Código (IaC) con Terraform. El objetivo de este proyecto es demostrar una arquitectura serverless e invitar a la comunidad a contribuir con ideas y mejoras.
+¡Bienvenido a este proyecto serverless! Este repositorio contiene una solución backend de detección y enmascaramiento de datos PII. Usando una arquitectura impulsada por eventos con servicios serverless.
 
 ## Tabla de Contenidos
 
