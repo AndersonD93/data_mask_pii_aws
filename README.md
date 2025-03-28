@@ -18,12 +18,21 @@
 
 Este proyecto demuestra una arquitectura serverless utilizando los servicios de AWS, incluyendo:
 
-- **AWS Lambda**: Lógica del backend.
-- **API Gateway**: Gestión de API.
-- **DynamoDB**: Almacenamiento de datos.
-- **S3**: Hosting de archivos estáticos.
-- **Cognito**: Servicio para autenticación y autorización de usuarios.
-- **CloudFront**: Red de distribución de contenido (CDN). (Proximo mvp)
+- **AWS Lambda**:    Lógica del backend, inicialización ejecución de trabajo en glue y posterior notificación ante la creación de la vista enmascarada.
+- **AWS Glue**:      Detección a partir de patrones data pii y creación de vistas enmascaradas.
+- **Crawler Glue**:  Detección de cambios sobre las tablas de redshift.Ejecución 
+- **Event Bridge**:  Productor de eventos para el desencadenar el procesamiento de la data.
+- **Redshift**:      Almacen de datos.
+- **CloudTrail**:    Centraliza las llamadas a las api y registra los cambios detectados sobre los crawler.
+
+El flujo de la solción consta de lo siguientes pasos.
+
+1. Usuario realiza operaciones DML tales como Create Table/ Update Table sobre las tablas en los esquemas de redshift.
+2. En un horario programado se realiza la llamada para que el crawler detecte los cambios sobre dichas tablas.
+3. Dichos cambios son registrados en cloud trail.
+4. El event bridge esta a la escucha de dichos eventos y ejecuta un desencadenamiento sobre la lambda.
+6. La lambda realiza la invocación del job de glue , encargado de descubrir los patrones de data pii y generar una vista enmascarada, donde evalua los permisos que tiene el usario sobre dicha vista y entrega la información en limpio o enmascarada.
+7. Al culminar la creación de la vista se notifica al usuario administrador la creación o actualización de la vista.
 
 Está diseñado para ser implementado fácilmente utilizando Terraform, lo que permite un aprovisionamiento consistente de la infraestructura.
 
@@ -31,7 +40,6 @@ Está diseñado para ser implementado fácilmente utilizando Terraform, lo que p
 
 ![Diagrama de Arquitectura](image.png)
 
-La aplicación consiste en un frontend alojado en S3/CloudFront y un backend con API Gateway y Lambda, interactuando con DynamoDB para la persistencia de datos.
 
 ## Requisitos Previos
 
@@ -40,7 +48,6 @@ Antes de desplegar el proyecto, asegúrate de tener lo siguiente:
 - [Terraform](https://www.terraform.io/downloads.html) instalado.
 - AWS CLI instalado y configurado con los permisos adecuados de IAM.
 - Una cuenta de AWS.
-- Una cuenta en [football-data.org](https://football-data.org/) para obtener un token de API.
 
 ## Instrucciones de Configuración
 
@@ -48,33 +55,11 @@ Sigue estos pasos para desplegar el proyecto:
 
 1. **Clona el repositorio**:
    ```bash
-   git clone https://github.com/AndersonD93/project_bets_manager
+   git clone https://github.com/AndersonD93/data_mask_pii_aws.git
    cd terraform
    ```
 
-2. **Crea un secreto en AWS Secrets Manager**:
-   Ve a la consola de AWS Secrets Manager y crea un secreto con el nombre `project/footbal-data` que contenga la siguiente estructura:
-   ```json
-   {
-       "X-Auth-Token": "<TU_API_TOKEN>"
-   }
-   ```
-   Reemplaza `<TU_API_TOKEN>` con el token proporcionado por football-data.org.
-
-3. **Crea el archivo `config.js`**:
-   Crea un archivo llamado `config.js` en la carpeta `templates/js` con el siguiente contenido: (Este generara de forma dinamica la url requerida para la obtención de secretos)
-   ```javascript
-   const config = {
-       development: {
-           apiUrlSecrets: "${url_invoke_api}"
-       }
-   };
-
-   const environment = 'development';
-
-   export default config[environment];
-   ```
-4. **Inicializa Terraform usando el backend local**:
+2. **Inicializa Terraform usando el backend local**:
    Comenta el bloque `backend` en el archivo `main.tf` y ejecuta los siguientes comandos para aprovisionar los recursos iniciales:
    ```bash
    terraform init
@@ -109,27 +94,19 @@ Sigue estos pasos para desplegar el proyecto:
    terraform apply
    ```
 
-6. **Personaliza las variables**:
-   Actualiza el archivo `variables.tf` o proporciona un archivo `terraform.tfvars` con tu configuración:
-   ```hcl
-   region = "us-east-1"
-   project = "bets-manager"
-   ```
-
-7. **Despliega la infraestructura**:
+6. **Despliega la infraestructura**:
    ```bash
    terraform apply
    ```
    Confirma los cambios escribiendo `yes` cuando se te solicite.
 
-8. **Accede a la aplicación**:
-   Una vez desplegado, Terraform mostrará información relevante, incluyendo la URL de CloudFront para el frontend y el endpoint de API Gateway.
 
 ## Pruebas de la Aplicación
 
-1. Abre la URL del frontend en tu navegador.
-2. Usa la interfaz para interactuar con la API backend (por ejemplo, enviando solicitudes, viendo respuestas).
-3. También puedes probar la API directamente usando herramientas como Postman o curl.
+1. Inserta nuevos datos sobre el redshift.
+2. Ejecuta el crawler de forma manual.
+3. Ingresa a la bd con el usuario creado en el setup.sql con permisos en false. (Visualizando la información enmascarada)
+4. Cambia dichos permisos a true. (Visualizaras la información en limpio)
 
 ## Contribuciones
 
